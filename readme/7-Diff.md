@@ -77,10 +77,11 @@ mAdapter.setDiffNewData(newData2);
 
 ## 2、自定义 Diff 配置（可选）
 
-> 自定义配置不需要使用`setDiffCallback()`方法！
+> 自定义配置不使用`setDiffCallback()`方法！
 
-目前提供自定义工作线程
+首先还是需要实现`DiffUtil.ItemCallback`.
 
+目前提供自定义线程
 ```java
 BrvahAsyncDifferConfig config =  new BrvahAsyncDifferConfig.Builder(new DiffDemoCallback())
                 .setMainThreadExecutor(你的主线程)

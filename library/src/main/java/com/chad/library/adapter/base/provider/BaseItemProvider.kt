@@ -19,8 +19,8 @@ abstract class BaseItemProvider<T> {
     lateinit var context: Context
 
     private var weakAdapter: WeakReference<BaseProviderMultiAdapter<T>>? = null
-    private val clickViewIds: ArrayList<Int> by lazy { ArrayList<Int>() }
-    private val longClickViewIds: ArrayList<Int> by lazy { ArrayList<Int>() }
+    private val clickViewIds: ArrayList<Int> by lazy(LazyThreadSafetyMode.NONE) { ArrayList<Int>() }
+    private val longClickViewIds: ArrayList<Int> by lazy(LazyThreadSafetyMode.NONE) { ArrayList<Int>() }
 
     internal fun setAdapter(adapter: BaseProviderMultiAdapter<T>) {
         weakAdapter = WeakReference(adapter)
@@ -46,7 +46,7 @@ abstract class BaseItemProvider<T> {
      *
      * @param parent
      */
-    open fun onCreateViewHolder(parent: ViewGroup): BaseViewHolder {
+    open fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BaseViewHolder {
         return BaseViewHolder(parent.getItemView(layoutId))
     }
 
@@ -54,7 +54,7 @@ abstract class BaseItemProvider<T> {
      * （可选重写）ViewHolder创建完毕以后的回掉方法。
      * @param viewHolder VH
      */
-    open fun onViewHolderCreated(viewHolder: BaseViewHolder) {}
+    open fun onViewHolderCreated(viewHolder: BaseViewHolder, viewType: Int) {}
 
     /**
      * item 若想实现条目点击事件则重写该方法

@@ -10,16 +10,15 @@ import com.chad.library.adapter.base.provider.BaseItemProvider
 import com.chad.library.adapter.base.provider.BaseNodeProvider
 import com.chad.library.adapter.base.viewholder.BaseViewHolder
 
-abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
-    : BaseProviderMultiAdapter<BaseNode>(data) {
+abstract class BaseNodeAdapter(nodeList: MutableList<BaseNode>? = null)
+    : BaseProviderMultiAdapter<BaseNode>(null) {
 
     private val fullSpanNodeTypeSet = HashSet<Int>()
 
     init {
-        if (!data.isNullOrEmpty()) {
-            val flatData = flatData(data)
-            data.clear()
-            data.addAll(flatData)
+        if (!nodeList.isNullOrEmpty()) {
+            val flatData = flatData(nodeList)
+            this.data.addAll(flatData)
         }
     }
 
@@ -83,6 +82,12 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
         super.setNewData(flatData(data ?: arrayListOf()))
     }
 
+    /**
+     * 如果需要对某节点下的子节点进行数据操作，请使用[nodeAddData]！
+     *
+     * @param position Int 整个 data 的 index
+     * @param data BaseNode
+     */
     override fun addData(position: Int, data: BaseNode) {
         addData(position, arrayListOf(data))
     }
@@ -101,43 +106,43 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
         super.addData(nodes)
     }
 
+    /**
+     * 如果需要对某节点下的子节点进行数据操作，请使用[nodeRemoveData]！
+     *
+     * @param position Int 整个 data 的 index
+     */
     override fun remove(position: Int) {
-        if (position >= data.size) {
-            return
-        }
-
-        //被移除的item数量
-        var removeCount = 0
-
-        val node = this.data[position]
-        //移除子项
-        if (!node.childNode.isNullOrEmpty()) {
-            val items = flatData(node.childNode!!)
-            this.data.removeAll(items)
-            removeCount = items.size
-        }
-        //移除node自己
-        this.data.removeAt(position)
-        removeCount += 1
-
-        // 移除脚部
-        if (node is NodeFooterImp && node.footerNode != null) {
-            this.data.removeAt(position)
-            removeCount += 1
-        }
-
-        notifyItemRangeRemoved(position + getHeaderLayoutCount(), removeCount)
+        val removeCount = removeAt(position)
+        notifyItemRangeRemoved(position + headerLayoutCount, removeCount)
         compatibilityDataSizeChanged(0)
     }
 
+    /**
+     * 如果需要对某节点下的子节点进行数据操作，请使用[nodeSetData]！
+     * @param index Int
+     * @param data BaseNode
+     */
     override fun setData(index: Int, data: BaseNode) {
-        val flatData = flatData(arrayListOf(data))
-        flatData.forEachIndexed { i, baseNode ->
-            this.data[index + i] = baseNode
+        // 先移除，再添加
+        val removeCount = removeAt(index)
+
+        val newFlatData = flatData(arrayListOf(data))
+        this.data.addAll(index, newFlatData)
+
+        if (removeCount == newFlatData.size) {
+            notifyItemRangeChanged(index + headerLayoutCount, removeCount)
+        } else {
+            notifyItemRangeRemoved(index + headerLayoutCount, removeCount)
+            notifyItemRangeInserted(index + headerLayoutCount, newFlatData.size)
+
+//        notifyItemRangeChanged(index + getHeaderLayoutCount(), max(removeCount, newFlatData.size)
         }
-        notifyItemRangeChanged(index + getHeaderLayoutCount(), flatData.size)
     }
 
+    /**
+     * 替换整个列表数据，如果需要对某节点下的子节点进行替换，请使用[nodeReplaceChildData]！
+     * @param newData Collection<BaseNode>
+     */
     override fun replaceData(newData: Collection<BaseNode>) {
         // 不是同一个引用才清空列表
         if (newData != this.data) {
@@ -161,7 +166,233 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
         super.setDiffNewData(diffResult, flatData(newData))
     }
 
+    /**
+     * 从数组中移除
+     * @param position Int
+     * @return Int 被移除的数量
+     */
+    private fun removeAt(position: Int): Int {
+        if (position >= data.size) {
+            return 0
+        }
+        // 记录被移除的item数量
+        var removeCount = 0
+
+        val node = this.data[position]
+        // 先移除子项
+        if (!node.childNode.isNullOrEmpty()) {
+            if (node is BaseExpandNode) {
+                if (node.isExpanded) {
+                    val items = flatData(node.childNode!!)
+                    this.data.removeAll(items)
+                    removeCount = items.size
+                }
+            } else {
+                val items = flatData(node.childNode!!)
+                this.data.removeAll(items)
+                removeCount = items.size
+            }
+        }
+        // 移除node自己
+        this.data.removeAt(position)
+        removeCount += 1
+
+        // 移除脚部
+        if (node is NodeFooterImp && node.footerNode != null) {
+            this.data.removeAt(position)
+            removeCount += 1
+        }
+        return removeCount
+    }
+
+    private fun removeChildAt(position: Int): Int {
+        if (position >= data.size) {
+            return 0
+        }
+        // 记录被移除的item数量
+        var removeCount = 0
+
+        val node = this.data[position]
+        // 先移除子项
+        if (!node.childNode.isNullOrEmpty()) {
+            if (node is BaseExpandNode) {
+                if (node.isExpanded) {
+                    val items = flatData(node.childNode!!)
+                    this.data.removeAll(items)
+                    removeCount = items.size
+                }
+            } else {
+                val items = flatData(node.childNode!!)
+                this.data.removeAll(items)
+                removeCount = items.size
+            }
+        }
+        return removeCount
+    }
+
     /*************************** 重写数据设置方法 END ***************************/
+
+
+    /*************************** Node 数据操作 ***************************/
+
+    /**
+     * 对指定的父node，添加子node
+     * @param parentNode BaseNode 父node
+     * @param data BaseNode 子node
+     */
+    fun nodeAddData(parentNode: BaseNode, data: BaseNode) {
+        parentNode.childNode?.let {
+            it.add(data)
+
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                return
+            }
+
+            val parentIndex = this.data.indexOf(parentNode)
+            val childIndex = it.size
+            addData(parentIndex + childIndex, data)
+        }
+    }
+
+    /**
+     * 对指定的父node，在指定位置添加子node
+     * @param parentNode BaseNode 父node
+     * @param childIndex Int 此位置是相对于其childNodes数据的位置！并不是整个data
+     * @param data BaseNode 添加的数据
+     */
+    fun nodeAddData(parentNode: BaseNode, childIndex: Int, data: BaseNode) {
+        parentNode.childNode?.let {
+            it.add(childIndex, data)
+
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                return
+            }
+
+            val parentIndex = this.data.indexOf(parentNode)
+            val pos = parentIndex + 1 + childIndex
+            addData(pos, data)
+        }
+    }
+
+    /**
+     * 对指定的父node，在指定位置添加子node集合
+     * @param parentNode BaseNode 父node
+     * @param childIndex Int 此位置是相对于其childNodes数据的位置！并不是整个data
+     * @param newData 添加的数据集合
+     */
+    fun nodeAddData(parentNode: BaseNode, childIndex: Int, newData: Collection<BaseNode>) {
+        parentNode.childNode?.let {
+            it.addAll(childIndex, newData)
+
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                return
+            }
+            val parentIndex = this.data.indexOf(parentNode)
+            val pos = parentIndex + 1 + childIndex
+            addData(pos, newData)
+        }
+    }
+
+    /**
+     * 对指定的父node下对子node进行移除
+     * @param parentNode BaseNode 父node
+     * @param childIndex Int 此位置是相对于其childNodes数据的位置！并不是整个data
+     */
+    fun nodeRemoveData(parentNode: BaseNode, childIndex: Int) {
+        parentNode.childNode?.let {
+            if (childIndex >= it.size) {
+                return
+            }
+
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                it.removeAt(childIndex)
+                return
+            }
+
+            val parentIndex = this.data.indexOf(parentNode)
+            val pos = parentIndex + 1 + childIndex
+            remove(pos)
+
+            it.removeAt(childIndex)
+        }
+    }
+
+    /**
+     * 对指定的父node下对子node进行移除
+     * @param parentNode BaseNode 父node
+     * @param childNode BaseNode 子node
+     */
+    fun nodeRemoveData(parentNode: BaseNode, childNode: BaseNode) {
+        parentNode.childNode?.let {
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                it.remove(childNode)
+                return
+            }
+            remove(childNode)
+
+            it.remove(childNode)
+        }
+    }
+
+    /**
+     * 改变指定的父node下的子node数据
+     * @param parentNode BaseNode
+     * @param childIndex Int 此位置是相对于其childNodes数据的位置！并不是整个data
+     * @param data BaseNode 新数据
+     */
+    fun nodeSetData(parentNode: BaseNode, childIndex: Int, data: BaseNode) {
+        parentNode.childNode?.let {
+            if (childIndex >= it.size) {
+                return
+            }
+
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                it[childIndex] = data
+                return
+            }
+
+            val parentIndex = this.data.indexOf(parentNode)
+            val pos = parentIndex + 1 + childIndex
+            setData(pos, data)
+
+            it[childIndex] = data
+        }
+    }
+
+    /**
+     * 替换父节点下的子节点集合
+     * @param parentNode BaseNode
+     * @param newData Collection<BaseNode>
+     */
+    fun nodeReplaceChildData(parentNode: BaseNode, newData: Collection<BaseNode>) {
+        parentNode.childNode?.let {
+            if (parentNode is BaseExpandNode && !parentNode.isExpanded) {
+                it.clear()
+                it.addAll(newData)
+                return
+            }
+
+            val parentIndex = this.data.indexOf(parentNode)
+            val removeCount = removeChildAt(parentIndex)
+
+            it.clear()
+            it.addAll(newData)
+
+            val newFlatData = flatData(newData)
+            this.data.addAll(parentIndex + 1, newFlatData)
+
+            val positionStart = parentIndex + 1 + headerLayoutCount
+            if (removeCount == newFlatData.size) {
+                notifyItemRangeChanged(positionStart, removeCount)
+            } else {
+                notifyItemRangeRemoved(positionStart, removeCount)
+                notifyItemRangeInserted(positionStart, newFlatData.size)
+            }
+//            notifyItemRangeChanged(parentIndex + 1 + getHeaderLayoutCount(), max(removeCount, newFlatData.size))
+        }
+    }
+
+    /*************************** Node 数据操作 END ***************************/
 
     /**
      * 将输入的嵌套类型数组循环递归，在扁平化数据的同时，设置展开状态
@@ -187,7 +418,6 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
                 isExpanded?.let {
                     element.isExpanded = it
                 }
-
             } else {
                 val childNode = element.childNode
                 if (!childNode.isNullOrEmpty()) {
@@ -218,15 +448,16 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
     private fun collapse(@IntRange(from = 0) position: Int,
                          isChangeChildCollapse: Boolean = false,
                          animate: Boolean = true,
-                         notify: Boolean = true): Int {
+                         notify: Boolean = true,
+                         parentPayload: Any? = null): Int {
         val node = this.data[position]
 
         if (node is BaseExpandNode && node.isExpanded) {
-            val adapterPosition = position + getHeaderLayoutCount()
+            val adapterPosition = position + headerLayoutCount
 
             node.isExpanded = false
             if (node.childNode.isNullOrEmpty()) {
-                notifyItemChanged(adapterPosition)
+                notifyItemChanged(adapterPosition, parentPayload)
                 return 0
             }
             val items = flatData(node.childNode!!, if (isChangeChildCollapse) false else null)
@@ -234,7 +465,7 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
             this.data.removeAll(items)
             if (notify) {
                 if (animate) {
-                    notifyItemChanged(adapterPosition)
+                    notifyItemChanged(adapterPosition, parentPayload)
                     notifyItemRangeRemoved(adapterPosition + 1, size)
                 } else {
                     notifyDataSetChanged()
@@ -257,15 +488,16 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
     private fun expand(@IntRange(from = 0) position: Int,
                        isChangeChildExpand: Boolean = false,
                        animate: Boolean = true,
-                       notify: Boolean = true): Int {
+                       notify: Boolean = true,
+                       parentPayload: Any? = null): Int {
         val node = this.data[position]
 
         if (node is BaseExpandNode && !node.isExpanded) {
-            val adapterPosition = position + getHeaderLayoutCount()
+            val adapterPosition = position + headerLayoutCount
 
             node.isExpanded = true
             if (node.childNode.isNullOrEmpty()) {
-                notifyItemChanged(adapterPosition)
+                notifyItemChanged(adapterPosition, parentPayload)
                 return 0
             }
             val items = flatData(node.childNode!!, if (isChangeChildExpand) true else null)
@@ -273,7 +505,7 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
             this.data.addAll(position + 1, items)
             if (notify) {
                 if (animate) {
-                    notifyItemChanged(adapterPosition)
+                    notifyItemChanged(adapterPosition, parentPayload)
                     notifyItemRangeInserted(adapterPosition + 1, size)
                 } else {
                     notifyDataSetChanged()
@@ -293,8 +525,9 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
     @JvmOverloads
     fun collapse(@IntRange(from = 0) position: Int,
                  animate: Boolean = true,
-                 notify: Boolean = true): Int {
-        return collapse(position, false, animate, notify)
+                 notify: Boolean = true,
+                 parentPayload: Any? = null): Int {
+        return collapse(position, false, animate, notify, parentPayload)
     }
 
     /**
@@ -306,8 +539,9 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
     @JvmOverloads
     fun expand(@IntRange(from = 0) position: Int,
                animate: Boolean = true,
-               notify: Boolean = true): Int {
-        return expand(position, false, animate, notify)
+               notify: Boolean = true,
+               parentPayload: Any? = null): Int {
+        return expand(position, false, animate, notify, parentPayload)
     }
 
     /**
@@ -317,26 +551,35 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
      * @param notify Boolean
      */
     @JvmOverloads
-    fun expandOrCollapse(@IntRange(from = 0) position: Int, animate: Boolean = true, notify: Boolean = true): Int {
+    fun expandOrCollapse(@IntRange(from = 0) position: Int,
+                         animate: Boolean = true,
+                         notify: Boolean = true,
+                         parentPayload: Any? = null): Int {
         val node = this.data[position]
         if (node is BaseExpandNode) {
             return if (node.isExpanded) {
-                collapse(position, false, animate, notify)
+                collapse(position, false, animate, notify, parentPayload)
             } else {
-                expand(position, false, animate, notify)
+                expand(position, false, animate, notify, parentPayload)
             }
         }
         return 0
     }
 
     @JvmOverloads
-    fun expandAndChild(@IntRange(from = 0) position: Int, animate: Boolean = true, notify: Boolean = true): Int {
-        return expand(position, true, animate, notify)
+    fun expandAndChild(@IntRange(from = 0) position: Int,
+                       animate: Boolean = true,
+                       notify: Boolean = true,
+                       parentPayload: Any? = null): Int {
+        return expand(position, true, animate, notify, parentPayload)
     }
 
     @JvmOverloads
-    fun collapseAndChild(@IntRange(from = 0) position: Int, animate: Boolean = true, notify: Boolean = true): Int {
-        return collapse(position, true, animate, notify)
+    fun collapseAndChild(@IntRange(from = 0) position: Int,
+                         animate: Boolean = true,
+                         notify: Boolean = true,
+                         parentPayload: Any? = null): Int {
+        return collapse(position, true, animate, notify, parentPayload)
     }
 
     /**
@@ -352,9 +595,11 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
                                isExpandedChild: Boolean = false,
                                isCollapseChild: Boolean = true,
                                animate: Boolean = true,
-                               notify: Boolean = true) {
+                               notify: Boolean = true,
+                               expandPayload: Any? = null,
+                               collapsePayload: Any? = null) {
 
-        val expandCount = expand(position, isExpandedChild, animate, notify)
+        val expandCount = expand(position, isExpandedChild, animate, notify, expandPayload)
         if (expandCount == 0) {
             return
         }
@@ -377,7 +622,7 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
             // 从顶部开始位置循环
             var i = firstPosition
             do {
-                val collapseSize = collapse(i, isCollapseChild, animate, notify)
+                val collapseSize = collapse(i, isCollapseChild, animate, notify, collapsePayload)
                 i++
                 // 每次折叠后，重新计算新的 Position
                 newPosition -= collapseSize
@@ -396,7 +641,7 @@ abstract class BaseNodeAdapter(data: MutableList<BaseNode>? = null)
         if ((newPosition + expandCount) < lastPosition) {
             var i = newPosition + expandCount + 1
             while (i <= lastPosition) {
-                val collapseSize = collapse(i, isCollapseChild, animate, notify)
+                val collapseSize = collapse(i, isCollapseChild, animate, notify, collapsePayload)
                 i++
                 lastPosition -= collapseSize
             }
